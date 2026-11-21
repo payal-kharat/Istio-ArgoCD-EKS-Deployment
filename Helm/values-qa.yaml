@@ -1,0 +1,118 @@
+# 
+components:
+  frontend:
+    enabled: true
+    deploymentName: frontend
+    replicas: 1
+    image: "020048087135.dkr.ecr.us-east-1.amazonaws.com/employee-mgm-qa-frontend"
+    tag: "DEV-023d5bd"
+    containerPort: 80
+    service:
+      enabled: true
+      name: frontend-service
+      type: ClusterIP
+      port: 80
+    env: []
+  backend:
+    enabled: true
+    deploymentName: backend
+    replicas: 1
+    image: "020048087135.dkr.ecr.us-east-1.amazonaws.com/employee-mgm-qa-backend"
+    tag: "00b1cc3ca7d24f1782b0d82294750e2828ee32f8"
+    containerPort: 5000
+    service:
+      enabled: true
+      name: backend
+      type: ClusterIP
+      port: 5000
+    env:
+      - name: DB_HOST
+        valueFrom:
+          configMapKeyRef:
+            name: employee-cm
+            key: DB_HOST
+      - name: DB_PORT
+        valueFrom:
+          configMapKeyRef:
+            name: employee-cm
+            key: DB_PORT
+      - name: DB_USER
+        valueFrom:
+          secretKeyRef:
+            name: mysql-secret
+            key: MYSQL_USER
+      - name: DB_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: mysql-secret
+            key: MYSQL_PASSWORD
+      - name: DB_NAME
+        valueFrom:
+          secretKeyRef:
+            name: mysql-secret
+            key: MYSQL_DATABASE
+  mysql:
+    enabled: true
+    deploymentName: mysql
+    replicas: 1
+    image: "020048087135.dkr.ecr.us-east-1.amazonaws.com/employee-mgm-qa-db"
+    tag: "b9c7e5440e5085a415837913962862cf3e6f6408"
+    containerPort: 3306
+    persistence:
+      existingClaim: mysql-pvc
+      size: 2Gi
+    service:
+      enabled: true
+      name: mysql
+      type: ClusterIP
+      port: 3306
+    env:
+      - name: MYSQL_ROOT_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: mysql-secret
+            key: MYSQL_ROOT_PASSWORD
+      - name: MYSQL_DATABASE
+        valueFrom:
+          secretKeyRef:
+            name: mysql-secret
+            key: MYSQL_DATABASE
+      - name: MYSQL_USER
+        valueFrom:
+          secretKeyRef:
+            name: mysql-secret
+            key: MYSQL_USER
+      - name: MYSQL_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: mysql-secret
+            key: MYSQL_PASSWORD
+configMap:
+  enabled: true
+  name: employee-cm
+  data:
+    DB_HOST: mysql
+    DB_PORT: "3306"
+secret:
+  enabled: true
+  name: mysql-secret
+  stringData:
+    MYSQL_ROOT_PASSWORD: cm9vdHBhc3N3b3Jk
+    MYSQL_DATABASE: ZW1wbG95ZWVfZGI=
+    MYSQL_USER: ZW1wbG95ZWVfdXNlcg==
+    MYSQL_PASSWORD: ZW1wbG95ZWUxMjM=
+storageClass:
+  enabled: true
+  name: ebs-gp3
+  volumeBindingMode: WaitForFirstConsumer
+  allowVolumeExpansion: true
+  parameters:
+    type: gp3
+    fsType: ext4
+ingress:
+  enabled: true
+  name: employee-management-ingress
+  className: alb
+  scheme: internet-facing
+  targetType: ip
+  host: employee-qa.com

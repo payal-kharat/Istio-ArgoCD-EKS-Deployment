@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+
+metadata:
+  name: employee-config-uat
+  namespace: argocd
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git
+    targetRevision: main
+    path: Helm
+
+    helm:
+      valueFiles:
+        - values-uat.yaml
+
+      parameters:
+        - name: component
+          value: config
+
+  destination:
+    server: https://E923F740DA49D8181220ECFB2E1EE1D3.gr7.us-east-1.eks.amazonaws.com
+    namespace: app-uat
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true

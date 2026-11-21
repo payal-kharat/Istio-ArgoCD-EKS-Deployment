@@ -1,0 +1,39 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: employee-db-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git
+    targetRevision: main
+    path: Helm
+    helm:
+      valueFiles:
+        - values-prod.yaml
+      parameters:
+        - name: components.frontend.enabled
+          value: "false"
+        - name: components.backend.enabled
+          value: "false"
+        - name: components.mysql.enabled
+          value: "true"
+        - name: configMap.enabled
+          value: "true"
+        - name: secret.enabled
+          value: "true"
+        - name: ingress.enabled
+          value: "false"
+        - name: storageClass.enabled
+          value: "true"
+  destination:
+    server: https://E923F740DA49D8181220ECFB2E1EE1D3.gr7.us-east-1.eks.amazonaws.com
+    namespace: app-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,42 @@
+
+{{- range $name, $component := .Values.components }}
+{{- if $component.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $component.deploymentName }}
+  labels:
+    app: {{ $name }}
+spec:
+  replicas: {{ $component.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: "{{ $component.image }}:{{ $component.tag }}"
+          ports:
+            - containerPort: {{ $component.containerPort }}
+          {{- with $component.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if eq $name "mysql" }}
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          {{- end }}
+      {{- if eq $name "mysql" }}
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-pvc
+      {{- end }}
+{{- end }}
+{{- end }}

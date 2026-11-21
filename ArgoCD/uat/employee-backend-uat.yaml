@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: employee-backend-uat
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git
+    targetRevision: main
+    path: Helm
+    helm:
+      valueFiles:
+        - values-uat.yaml
+      parameters:
+        - name: components.frontend.enabled
+          value: "false"
+        - name: components.backend.enabled
+          value: "true"
+        - name: components.mysql.enabled
+          value: "false"
+        - name: configMap.enabled
+          value: "false"
+        - name: secret.enabled
+          value: "false"
+        - name: ingress.enabled
+          value: "false"
+        - name: storageClass.enabled
+          value: "false"
+  destination:
+    server: https://E923F740DA49D8181220ECFB2E1EE1D3.gr7.us-east-1.eks.amazonaws.com
+    namespace: app-uat
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

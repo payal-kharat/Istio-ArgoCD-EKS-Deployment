@@ -1,0 +1,282 @@
+
+pipeline {
+    agent any
+
+    parameters {
+        choice(
+            name: 'Environment',
+            choices: ['dev', 'qa', 'uat', 'prod'],
+            description: 'Select deployment environment'
+        )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: '',
+            description: 'Existing DEV image tag for QA/UAT/PROD promotion'
+        )
+        choice(
+            name: 'REGISTER_ARGOCD_APPLICATION',
+            choices: ['no', 'yes'],
+            description: 'Register the Argo CD application'
+        )
+    }
+
+    environment {
+        AWS_REGION = 'us-east-1'
+        AWS_ACCOUNT_ID = '020048087135'
+        ECR_REGISTRY = '020048087135.dkr.ecr.us-east-1.amazonaws.com'
+        ECR_REPOSITORY_PREFIX = 'employee-mgm'
+        GITOPS_REPO = 'https://github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git'
+        GITOPS_BRANCH = 'main'
+        HELM_CHART_PATH = './Helm'
+        FRONTEND_DOCKERFILE = './frontend/Dockerfile'
+        BUILD_CONTEXT = './frontend'
+        EKS_CLUSTER_NAME = 'employee-mgm-dev-cluster'
+    }
+
+    stages {
+        stage('Checkout Source Code') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHA = sh(
+                        script: 'git rev-parse HEAD',
+                        returnStdout: true
+                    ).trim()
+                    env.SHORT_COMMIT = env.GIT_COMMIT_SHA.take(7)
+                }
+            }
+        }
+
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    if (params.Environment != 'dev' && !params.IMAGE_TAG?.trim()) {
+                        error('IMAGE_TAG is required for QA, UAT and PROD.')
+                    }
+                }
+            }
+        }
+
+        stage('Configure AWS and Verify Access') {
+            steps {
+                withAwsCredentials {
+                    sh '''
+                        set -e
+                        aws sts get-caller-identity
+                        aws eks describe-cluster \
+                            --name "$EKS_CLUSTER_NAME" \
+                            --region "$AWS_REGION" \
+                            --query 'cluster.status' \
+                            --output text
+                        aws eks update-kubeconfig \
+                            --name "$EKS_CLUSTER_NAME" \
+                            --region "$AWS_REGION"
+                        kubectl get namespaces
+                    '''
+                }
+            }
+        }
+
+        stage('Build and Push DEV Image') {
+            when {
+                expression { params.Environment == 'dev' }
+            }
+            steps {
+                script {
+                    env.IMAGE_TAG_TO_DEPLOY = "DEV-${env.SHORT_COMMIT}"
+                    withAwsCredentials {
+                        loginToECR()
+                        buildAndPushImage(
+                            "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-dev-frontend",
+                            env.IMAGE_TAG_TO_DEPLOY,
+                            env.FRONTEND_DOCKERFILE,
+                            env.BUILD_CONTEXT
+                        )
+                    }
+                }
+            }
+        }
+
+        stage('Promote Image') {
+            when {
+                expression { params.Environment != 'dev' }
+            }
+            steps {
+                script {
+                    env.IMAGE_TAG_TO_DEPLOY = params.IMAGE_TAG.trim()
+
+                    def sourceEnvironment = [
+                        qa: 'dev',
+                        uat: 'qa',
+                        prod: 'uat'
+                    ][params.Environment]
+
+                    withAwsCredentials {
+                        loginToECR()
+                        promoteImage(
+                            "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${sourceEnvironment}-frontend",
+                            "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${params.Environment}-frontend",
+                            env.IMAGE_TAG_TO_DEPLOY
+                        )
+                    }
+                }
+            }
+        }
+
+        stage('Production Approval') {
+            when {
+                expression { params.Environment == 'prod' }
+            }
+            steps {
+                input(
+                    message: "Approve frontend image ${env.IMAGE_TAG_TO_DEPLOY} for PROD?",
+                    ok: 'Approve Production Deployment'
+                )
+            }
+        }
+
+        stage('Update Helm Values') {
+            steps {
+                script {
+                    def valuesFile = getValuesFile(params.Environment)
+                    def targetImage = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${params.Environment}-frontend"
+
+                    sh """
+                        set -e
+                        yq -i '.components.frontend.image = "${targetImage}"' ${valuesFile}
+                        yq -i '.components.frontend.tag = "${env.IMAGE_TAG_TO_DEPLOY}"' ${valuesFile}
+                        yq '.components.frontend' ${valuesFile}
+                    """
+                }
+            }
+        }
+
+        stage('Helm Validation') {
+            steps {
+                script {
+                    def valuesFile = getValuesFile(params.Environment)
+
+                    sh """
+                        set -e
+                        helm lint ${env.HELM_CHART_PATH} -f ${valuesFile}
+                        helm template employee-frontend ${env.HELM_CHART_PATH} \
+                            -f ${valuesFile} \
+                            --namespace ${getKubernetesNamespace(params.Environment)} \
+                            --set components.frontend.enabled=true \
+                            --set components.backend.enabled=false \
+                            --set components.mysql.enabled=false \
+                            --set ingress.enabled=false
+                    """
+                }
+            }
+        }
+
+        stage('Push Changes to GitOps Repository') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'Github',
+                    usernameVariable: 'GIT_USERNAME',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    script {
+                        def valuesFile = getValuesFile(params.Environment)
+
+                        sh """
+                            set -e
+                            git config user.name "Jenkins"
+                            git config user.email "jenkins@example.com"
+                            git add ${valuesFile}
+
+                            if git diff --cached --quiet; then
+                                echo "No Helm values changes to commit."
+                            else
+                                git commit -m "Update frontend ${params.Environment} image to ${env.IMAGE_TAG_TO_DEPLOY}"
+                                git remote set-url origin https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git
+                                git pull --rebase origin ${env.GITOPS_BRANCH}
+                                git push origin HEAD:${env.GITOPS_BRANCH}
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Register Argo CD Application') {
+            when {
+                expression { params.REGISTER_ARGOCD_APPLICATION == 'yes' }
+            }
+            steps {
+                script {
+                    def manifest = getArgoCDManifest(params.Environment)
+
+                    withAwsCredentials {
+                        sh """
+                            set -e
+                            aws eks update-kubeconfig \
+                                --name ${env.EKS_CLUSTER_NAME} \
+                                --region ${env.AWS_REGION}
+
+                            kubectl apply -f ${manifest}
+                            kubectl get applications -n argocd
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Frontend ${params.Environment} pipeline completed successfully."
+            echo "Image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${params.Environment}-frontend:${env.IMAGE_TAG_TO_DEPLOY}"
+        }
+        failure {
+            echo "Frontend ${params.Environment} pipeline failed. Check the failed stage."
+        }
+    }
+}
+
+def withAwsCredentials(Closure body) {
+    withCredentials([[
+        $class: 'AmazonWebServicesCredentialsBinding',
+        credentialsId: 'AWS'
+    ]]) {
+        body()
+    }
+}
+
+def loginToECR() {
+    sh """
+        aws ecr get-login-password --region ${env.AWS_REGION} |
+        docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
+    """
+}
+
+def buildAndPushImage(String image, String tag, String dockerfile, String context) {
+    sh """
+        set -e
+        docker build -f ${dockerfile} -t ${image}:${tag} ${context}
+        docker push ${image}:${tag}
+    """
+}
+
+def promoteImage(String sourceImage, String targetImage, String tag) {
+    sh """
+        set -e
+        docker pull ${sourceImage}:${tag}
+        docker tag ${sourceImage}:${tag} ${targetImage}:${tag}
+        docker push ${targetImage}:${tag}
+    """
+}
+
+def getValuesFile(String environment) {
+    return "./Helm/values-${environment}.yaml"
+}
+
+def getKubernetesNamespace(String environment) {
+    return "app-${environment}"
+}
+
+def getArgoCDManifest(String environment) {
+    return "ArgoCD/${environment}/employee-frontend-${environment}.yaml"
+}

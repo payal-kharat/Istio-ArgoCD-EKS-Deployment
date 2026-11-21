@@ -1,0 +1,9 @@
+{{- if .Values.configMap.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configMap.name }}
+data:
+  DB_HOST: {{ .Values.configMap.data.DB_HOST | quote }}
+  DB_PORT: {{ .Values.configMap.data.DB_PORT | quote }}
+{{- end }}   
