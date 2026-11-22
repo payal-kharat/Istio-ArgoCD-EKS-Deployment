@@ -28,7 +28,7 @@ spec:
         - name: storageClass.enabled
           value: "false"
   destination:
-    server: arn:aws:eks:us-east-1:020048087135:cluster/employee-mgm-dev-cluster
+    server: https://6D5738BE9D5DE4304CD29BFDA541F0F9.gr7.us-east-1.eks.amazonaws.com
     namespace: app-dev
   syncPolicy:
     automated:
