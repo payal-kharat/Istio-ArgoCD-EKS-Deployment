@@ -56,7 +56,7 @@ components:
     deploymentName: mysql
     replicas: 1
     image: "020048087135.dkr.ecr.us-east-1.amazonaws.com/employee-mgm-dev-db"
-    tag: "4d9c79e9e2795f5c32d9e9727c182fd62dc02c3e"
+    tag: "10d15dbb1aa24f6377a1b9985ec6ede54f8f5351"
     containerPort: 3306
     persistence:
       existingClaim: mysql-pvc
