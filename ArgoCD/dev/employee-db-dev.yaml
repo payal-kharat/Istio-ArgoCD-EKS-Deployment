@@ -4,8 +4,10 @@ kind: Application
 metadata:
   name: employee-db-dev
   namespace: argocd
+
 spec:
   project: default
+
   source:
     repoURL: https://github.com/payal-kharat/Istio-ArgoCD-EKS-Deployment.git
     targetRevision: main
@@ -28,15 +30,19 @@ spec:
           value: "false"
         - name: storageClass.enabled
           value: "true"
+
   destination:
     server: https://6D5738BE9D5DE4304CD29BFDA541F0F9.gr7.us-east-1.eks.amazonaws.com
     namespace: app-dev
+
+  syncPolicy:
     managedNamespaceMetadata:
       labels:
         istio-injection: enabled
-  syncPolicy:
+
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
