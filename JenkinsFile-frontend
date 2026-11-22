@@ -25,7 +25,7 @@ pipeline {
         AWS_ACCOUNT_ID = '020048087135'
         ECR_REGISTRY = '020048087135.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPOSITORY_PREFIX = 'employee-mgm'
-        GITOPS_REPO = 'https://github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git'
+        GITOPS_REPO = 'https://github.com/payal-kharat/Istio-ArgoCD-EKS-Deployment.git'
         GITOPS_BRANCH = 'main'
         HELM_CHART_PATH = './Helm'
         FRONTEND_DOCKERFILE = './frontend/Dockerfile'

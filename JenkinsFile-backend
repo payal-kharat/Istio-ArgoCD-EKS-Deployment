@@ -21,7 +21,7 @@ pipeline {
         BACKEND_IMAGE_PROD = 'employee-mgm-prod-backend'
 
         GIT_CREDENTIALS = 'Github'
-        GITOPS_REPO = 'https://github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git'
+        GITOPS_REPO = 'https://github.com/payal-kharat/Istio-ArgoCD-EKS-Deployment.git'
         GITOPS_BRANCH = 'main'
 
         BACKEND_DOCKERFILE = './backend/Dockerfile'

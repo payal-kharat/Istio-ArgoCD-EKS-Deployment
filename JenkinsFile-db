@@ -21,7 +21,7 @@ pipeline {
         DB_IMAGE_PROD = 'employee-mgm-prod-db'
 
         GIT_CREDENTIALS = 'Github'
-        GITOPS_REPO = 'https://github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git'
+        GITOPS_REPO = 'https://github.com/payal-kharat/Istio-ArgoCD-EKS-Deployment.git'
         GITOPS_BRANCH = 'main'
 
         DB_DOCKERFILE = './db/Dockerfile'
