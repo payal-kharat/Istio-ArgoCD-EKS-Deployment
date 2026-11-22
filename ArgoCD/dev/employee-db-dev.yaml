@@ -7,7 +7,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git
+    repoURL: https://github.com/payal-kharat/Istio-ArgoCD-EKS-Deployment.git
     targetRevision: main
     path: Helm
     helm:
@@ -29,7 +29,7 @@ spec:
         - name: storageClass.enabled
           value: "true"
   destination:
-    server: https://E923F740DA49D8181220ECFB2E1EE1D3.gr7.us-east-1.eks.amazonaws.com
+    server: https://kubernetes.default.svc
     namespace: app-dev
   syncPolicy:
     automated:
