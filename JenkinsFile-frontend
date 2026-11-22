@@ -2,6 +2,11 @@
 pipeline {
     agent any
 
+    options {
+        disableConcurrentBuilds()
+        timestamps()
+    }
+
     parameters {
         choice(
             name: 'Environment',
@@ -11,7 +16,7 @@ pipeline {
         string(
             name: 'IMAGE_TAG',
             defaultValue: '',
-            description: 'Existing DEV image tag for QA/UAT/PROD promotion'
+            description: 'Existing image tag for QA/UAT/PROD promotion'
         )
         choice(
             name: 'REGISTER_ARGOCD_APPLICATION',
@@ -25,24 +30,46 @@ pipeline {
         AWS_ACCOUNT_ID = '020048087135'
         ECR_REGISTRY = '020048087135.dkr.ecr.us-east-1.amazonaws.com'
         ECR_REPOSITORY_PREFIX = 'employee-mgm'
+
         GITOPS_REPO = 'https://github.com/payal-kharat/Istio-ArgoCD-EKS-Deployment.git'
         GITOPS_BRANCH = 'main'
+
         HELM_CHART_PATH = './Helm'
         FRONTEND_DOCKERFILE = './frontend/Dockerfile'
         BUILD_CONTEXT = './frontend'
+
         EKS_CLUSTER_NAME = 'employee-mgm-dev-cluster'
     }
 
     stages {
-        stage('Checkout Source Code') {
+
+        stage('Clean Workspace') {
             steps {
-                checkout scm
+                deleteDir()
+                echo 'Old workspace and incomplete Git operations removed.'
+            }
+        }
+
+        stage('Checkout GitOps Repository') {
+            steps {
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "*/${env.GITOPS_BRANCH}"]],
+                    userRemoteConfigs: [[
+                        url: env.GITOPS_REPO,
+                        credentialsId: 'Github'
+                    ]]
+                ])
+
                 script {
                     env.GIT_COMMIT_SHA = sh(
                         script: 'git rev-parse HEAD',
                         returnStdout: true
                     ).trim()
+
                     env.SHORT_COMMIT = env.GIT_COMMIT_SHA.take(7)
+
+                    echo "Checked out commit: ${env.GIT_COMMIT_SHA}"
                 }
             }
         }
@@ -50,8 +77,14 @@ pipeline {
         stage('Validate Parameters') {
             steps {
                 script {
-                    if (params.Environment != 'dev' && !params.IMAGE_TAG?.trim()) {
+                    if (params.Environment != 'dev' &&
+                        !params.IMAGE_TAG?.trim()) {
                         error('IMAGE_TAG is required for QA, UAT and PROD.')
+                    }
+
+                    if (params.Environment == 'dev' &&
+                        params.REGISTER_ARGOCD_APPLICATION == 'yes') {
+                        echo 'Dev ArgoCD application registration enabled.'
                     }
                 }
             }
@@ -62,15 +95,19 @@ pipeline {
                 withAwsCredentials {
                     sh '''
                         set -e
+
                         aws sts get-caller-identity
+
                         aws eks describe-cluster \
                             --name "$EKS_CLUSTER_NAME" \
                             --region "$AWS_REGION" \
                             --query 'cluster.status' \
                             --output text
+
                         aws eks update-kubeconfig \
                             --name "$EKS_CLUSTER_NAME" \
                             --region "$AWS_REGION"
+
                         kubectl get namespaces
                     '''
                 }
@@ -79,13 +116,17 @@ pipeline {
 
         stage('Build and Push DEV Image') {
             when {
-                expression { params.Environment == 'dev' }
+                expression {
+                    params.Environment == 'dev'
+                }
             }
             steps {
                 script {
                     env.IMAGE_TAG_TO_DEPLOY = "DEV-${env.SHORT_COMMIT}"
+
                     withAwsCredentials {
                         loginToECR()
+
                         buildAndPushImage(
                             "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-dev-frontend",
                             env.IMAGE_TAG_TO_DEPLOY,
@@ -97,9 +138,25 @@ pipeline {
             }
         }
 
+        stage('Production Approval') {
+            when {
+                expression {
+                    params.Environment == 'prod'
+                }
+            }
+            steps {
+                input(
+                    message: "Approve frontend image ${params.IMAGE_TAG} for PROD?",
+                    ok: 'Approve Production Deployment'
+                )
+            }
+        }
+
         stage('Promote Image') {
             when {
-                expression { params.Environment != 'dev' }
+                expression {
+                    params.Environment != 'dev'
+                }
             }
             steps {
                 script {
@@ -113,6 +170,7 @@ pipeline {
 
                     withAwsCredentials {
                         loginToECR()
+
                         promoteImage(
                             "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${sourceEnvironment}-frontend",
                             "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${params.Environment}-frontend",
@@ -123,30 +181,29 @@ pipeline {
             }
         }
 
-        stage('Production Approval') {
-            when {
-                expression { params.Environment == 'prod' }
-            }
-            steps {
-                input(
-                    message: "Approve frontend image ${env.IMAGE_TAG_TO_DEPLOY} for PROD?",
-                    ok: 'Approve Production Deployment'
-                )
-            }
-        }
-
         stage('Update Helm Values') {
             steps {
                 script {
                     def valuesFile = getValuesFile(params.Environment)
-                    def targetImage = "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${params.Environment}-frontend"
 
-                    sh """
-                        set -e
-                        yq -i '.components.frontend.image = "${targetImage}"' ${valuesFile}
-                        yq -i '.components.frontend.tag = "${env.IMAGE_TAG_TO_DEPLOY}"' ${valuesFile}
-                        yq '.components.frontend' ${valuesFile}
-                    """
+                    def targetImage =
+                        "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${params.Environment}-frontend"
+
+                    withEnv([
+                        "VALUES_FILE=${valuesFile}",
+                        "TARGET_IMAGE=${targetImage}",
+                        "DEPLOY_IMAGE_TAG=${env.IMAGE_TAG_TO_DEPLOY}"
+                    ]) {
+                        sh '''
+                            set -e
+
+                            yq -i '.components.frontend.image = strenv(TARGET_IMAGE)' "$VALUES_FILE"
+
+                            yq -i '.components.frontend.tag = strenv(DEPLOY_IMAGE_TAG)' "$VALUES_FILE"
+
+                            yq '.components.frontend' "$VALUES_FILE"
+                        '''
+                    }
                 }
             }
         }
@@ -155,47 +212,94 @@ pipeline {
             steps {
                 script {
                     def valuesFile = getValuesFile(params.Environment)
+                    def namespace = getKubernetesNamespace(params.Environment)
 
-                    sh """
-                        set -e
-                        helm lint ${env.HELM_CHART_PATH} -f ${valuesFile}
-                        helm template employee-frontend ${env.HELM_CHART_PATH} \
-                            -f ${valuesFile} \
-                            --namespace ${getKubernetesNamespace(params.Environment)} \
-                            --set components.frontend.enabled=true \
-                            --set components.backend.enabled=false \
-                            --set components.mysql.enabled=false \
-                            --set ingress.enabled=false
-                    """
+                    withEnv([
+                        "VALUES_FILE=${valuesFile}",
+                        "APP_NAMESPACE=${namespace}"
+                    ]) {
+                        sh '''
+                            set -e
+
+                            helm lint "$HELM_CHART_PATH" -f "$VALUES_FILE"
+
+                            helm template employee-frontend "$HELM_CHART_PATH" \
+                                -f "$VALUES_FILE" \
+                                --namespace "$APP_NAMESPACE" \
+                                --set components.frontend.enabled=true \
+                                --set components.backend.enabled=false \
+                                --set components.mysql.enabled=false \
+                                --set ingress.enabled=false
+
+                            echo "Helm validation successful."
+                        '''
+                    }
                 }
             }
         }
 
         stage('Push Changes to GitOps Repository') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'Github',
-                    usernameVariable: 'GIT_USERNAME',
-                    passwordVariable: 'GIT_TOKEN'
-                )]) {
-                    script {
-                        def valuesFile = getValuesFile(params.Environment)
+                script {
+                    def valuesFile = getValuesFile(params.Environment)
 
-                        sh """
-                            set -e
-                            git config user.name "Jenkins"
-                            git config user.email "jenkins@example.com"
-                            git add ${valuesFile}
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'Github',
+                            usernameVariable: 'GIT_USERNAME',
+                            passwordVariable: 'GIT_TOKEN'
+                        )
+                    ]) {
+                        withEnv([
+                            "VALUES_FILE=${valuesFile}",
+                            "DEPLOY_ENV=${params.Environment}",
+                            "DEPLOY_IMAGE_TAG=${env.IMAGE_TAG_TO_DEPLOY}"
+                        ]) {
+                            sh '''
+                                set -eu
 
-                            if git diff --cached --quiet; then
-                                echo "No Helm values changes to commit."
-                            else
-                                git commit -m "Update frontend ${params.Environment} image to ${env.IMAGE_TAG_TO_DEPLOY}"
-                                git remote set-url origin https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/payal-kharat/ARGO-CD-EKS-DEPLOYMENT.git
-                                git pull --rebase origin ${env.GITOPS_BRANCH}
-                                git push origin HEAD:${env.GITOPS_BRANCH}
-                            fi
-                        """
+                                git config user.name "Jenkins"
+                                git config user.email "jenkins@example.com"
+
+                                git remote set-url origin "$GITOPS_REPO"
+
+                                git add "$VALUES_FILE"
+
+                                if git diff --cached --quiet; then
+                                    echo "No Helm values changes to commit."
+                                    exit 0
+                                fi
+
+                                git commit -m "Update frontend ${DEPLOY_ENV} image to ${DEPLOY_IMAGE_TAG}"
+
+                                ASKPASS_FILE="$(mktemp)"
+
+                                trap 'git rebase --abort >/dev/null 2>&1 || true; rm -f "$ASKPASS_FILE"' EXIT
+
+                                cat > "$ASKPASS_FILE" <<'EOF'
+#!/bin/sh
+case "$1" in
+    *Username*) printf '%s\\n' "$GIT_USERNAME" ;;
+    *Password*) printf '%s\\n' "$GIT_TOKEN" ;;
+    *) exit 1 ;;
+esac
+EOF
+
+                                chmod 700 "$ASKPASS_FILE"
+
+                                export GIT_ASKPASS="$ASKPASS_FILE"
+                                export GIT_TERMINAL_PROMPT=0
+
+                                git fetch origin \
+                                    "+refs/heads/${GITOPS_BRANCH}:refs/remotes/origin/${GITOPS_BRANCH}"
+
+                                git rebase "origin/${GITOPS_BRANCH}"
+
+                                git push origin "HEAD:refs/heads/${GITOPS_BRANCH}"
+
+                                echo "GitOps repository updated successfully."
+                            '''
+                        }
                     }
                 }
             }
@@ -203,22 +307,29 @@ pipeline {
 
         stage('Register Argo CD Application') {
             when {
-                expression { params.REGISTER_ARGOCD_APPLICATION == 'yes' }
+                expression {
+                    params.REGISTER_ARGOCD_APPLICATION == 'yes' &&
+                    params.Environment == 'dev'
+                }
             }
             steps {
                 script {
                     def manifest = getArgoCDManifest(params.Environment)
 
                     withAwsCredentials {
-                        sh """
-                            set -e
-                            aws eks update-kubeconfig \
-                                --name ${env.EKS_CLUSTER_NAME} \
-                                --region ${env.AWS_REGION}
+                        withEnv(["ARGO_MANIFEST=${manifest}"]) {
+                            sh '''
+                                set -e
 
-                            kubectl apply -f ${manifest}
-                            kubectl get applications -n argocd
-                        """
+                                aws eks update-kubeconfig \
+                                    --name "$EKS_CLUSTER_NAME" \
+                                    --region "$AWS_REGION"
+
+                                kubectl apply -f "$ARGO_MANIFEST"
+
+                                kubectl get applications -n argocd
+                            '''
+                        }
                     }
                 }
             }
@@ -228,10 +339,16 @@ pipeline {
     post {
         success {
             echo "Frontend ${params.Environment} pipeline completed successfully."
+
             echo "Image: ${env.ECR_REGISTRY}/${env.ECR_REPOSITORY_PREFIX}-${params.Environment}-frontend:${env.IMAGE_TAG_TO_DEPLOY}"
         }
+
         failure {
             echo "Frontend ${params.Environment} pipeline failed. Check the failed stage."
+        }
+
+        always {
+            echo 'Frontend pipeline execution finished.'
         }
     }
 }
@@ -246,26 +363,42 @@ def withAwsCredentials(Closure body) {
 }
 
 def loginToECR() {
+    sh '''
+        set -e
+
+        aws ecr get-login-password --region "$AWS_REGION" |
+        docker login --username AWS --password-stdin "$ECR_REGISTRY"
+    '''
+}
+
+def buildAndPushImage(
+    String image,
+    String tag,
+    String dockerfile,
+    String context
+) {
     sh """
-        aws ecr get-login-password --region ${env.AWS_REGION} |
-        docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
+        set -e
+
+        docker build -f '${dockerfile}' -t '${image}:${tag}' '${context}'
+
+        docker push '${image}:${tag}'
     """
 }
 
-def buildAndPushImage(String image, String tag, String dockerfile, String context) {
+def promoteImage(
+    String sourceImage,
+    String targetImage,
+    String tag
+) {
     sh """
         set -e
-        docker build -f ${dockerfile} -t ${image}:${tag} ${context}
-        docker push ${image}:${tag}
-    """
-}
 
-def promoteImage(String sourceImage, String targetImage, String tag) {
-    sh """
-        set -e
-        docker pull ${sourceImage}:${tag}
-        docker tag ${sourceImage}:${tag} ${targetImage}:${tag}
-        docker push ${targetImage}:${tag}
+        docker pull '${sourceImage}:${tag}'
+
+        docker tag '${sourceImage}:${tag}' '${targetImage}:${tag}'
+
+        docker push '${targetImage}:${tag}'
     """
 }
 
