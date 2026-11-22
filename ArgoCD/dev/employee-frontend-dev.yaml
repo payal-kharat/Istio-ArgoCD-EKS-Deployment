@@ -31,6 +31,7 @@ spec:
   destination:
     server: https://6D5738BE9D5DE4304CD29BFDA541F0F9.gr7.us-east-1.eks.amazonaws.com
     namespace: app-dev
+    
   syncPolicy:
     automated:
       prune: true
