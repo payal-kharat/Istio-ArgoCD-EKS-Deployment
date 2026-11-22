@@ -17,6 +17,10 @@ spec:
     metadata:
       labels:
         app: {{ $name }}
+      {{- if eq $name "mysql" }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+      {{- end }}
     spec:
       containers:
         - name: {{ $name }}
