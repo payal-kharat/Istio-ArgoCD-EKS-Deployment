@@ -1,3 +1,4 @@
+
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -10,17 +11,16 @@ spec:
     chart: istiod
     targetRevision: 1.32.0
     helm:
-      parameters:
-        - name: profile
-          value: default
-        - name: global.platform
-          value: eks
+      releaseName: istiod
+      values: |
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
+
