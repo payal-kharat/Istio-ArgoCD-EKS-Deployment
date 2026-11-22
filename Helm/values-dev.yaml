@@ -3,7 +3,7 @@ components:
   frontend:
     enabled: true
     deploymentName: frontend
-    replicas: 2
+    replicas: 1
     image: "020048087135.dkr.ecr.us-east-1.amazonaws.com/employee-mgm-dev-frontend"
     tag: "DEV-00d538d"
     containerPort: 80
