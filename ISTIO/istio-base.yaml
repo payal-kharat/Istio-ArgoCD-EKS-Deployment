@@ -13,6 +13,12 @@ spec:
   destination:
     server: https://BACCD85D487853A80167CF12C3221C12.gr7.us-east-1.eks.amazonaws.com
     namespace: istio-system
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: istiod-default-validator
+      jqPathExpressions:
+        - '.webhooks[].failurePolicy'
   syncPolicy:
     automated:
       prune: true
@@ -20,4 +26,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-
+      - RespectIgnoreDifferences=true
