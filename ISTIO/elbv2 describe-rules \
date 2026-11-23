@@ -1,0 +1,46 @@
+[
+    {
+        "Name": "eks-cluster-sg-employee-mgm-dev-cluster-1036423785",
+        "ID": "sg-0530ee4b36b903ce1",
+        "Inbound": [
+            {
+                "Protocol": "tcp",
+                "From": 80,
+                "To": 80,
+                "SourceSG": [
+                    "sg-05419e5bb2759070c"
+                ],
+                "SourceCIDR": []
+            },
+            {
+                "Protocol": "-1",
+                "From": null,
+                "To": null,
+                "SourceSG": [
+                    "sg-0530ee4b36b903ce1"
+                ],
+                "SourceCIDR": []
+            }
+        ]
+    },
+    {
+        "Name": "k8s-appdev-employee-2e6ff9b655",
+        "ID": "sg-07de6d47512f8537b",
+        "Inbound": [
+            {
+                "Protocol": "tcp",
+                "From": 80,
+                "To": 80,
+                "SourceSG": [],
+                "SourceCIDR": [
+                    "0.0.0.0/0"
+                ]
+            }
+        ]
+    },
+    {
+        "Name": "k8s-traffic-employeemgmdevcluster-30acb81722",
+        "ID": "sg-05419e5bb2759070c",
+        "Inbound": []
+    }
+]

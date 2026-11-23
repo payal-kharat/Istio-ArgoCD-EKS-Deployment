@@ -7,12 +7,22 @@ metadata:
   annotations:
     alb.ingress.kubernetes.io/scheme: {{ .Values.ingress.scheme | quote }}
     alb.ingress.kubernetes.io/target-type: {{ .Values.ingress.targetType | quote }}
+    alb.ingress.kubernetes.io/actions.forward-to-istio: >-
+      {"type":"forward","targetGroupARN":"arn:aws:elasticloadbalancing:us-east-1:020048087135:targetgroup/employee-istio-gateway/1083f9c3b6ffcfc4"}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
+          - path: /istio-test
+            pathType: Prefix
+            backend:
+              service:
+                name: forward-to-istio
+                port:
+                  name: use-annotation
+
           - path: /
             pathType: Prefix
             backend:
