@@ -11,10 +11,11 @@ spec:
     chart: istiod
     targetRevision: 1.32.0
     helm:
+      releaseName: istiod
       values: |
-        profile: default
-        meshConfig:
-          accessLogFile: /dev/stdout
+        profile: ""
+        global:
+          platform: eks
   destination:
     server: https://BACCD85D487853A80167CF12C3221C12.gr7.us-east-1.eks.amazonaws.com
     namespace: istio-system
@@ -24,4 +25,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-
+      - ServerSideApply=true
