@@ -14,6 +14,15 @@ spec:
       releaseName: istiod
       values: |
         profile: ""
+        autoscaleEnabled: false
+        replicaCount: 1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
   destination:
     server: https://BACCD85D487853A80167CF12C3221C12.gr7.us-east-1.eks.amazonaws.com
     namespace: istio-system
