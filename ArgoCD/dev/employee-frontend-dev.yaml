@@ -29,7 +29,7 @@ spec:
         - name: storageClass.enabled
           value: "false"
   destination:
-    server: https://6D5738BE9D5DE4304CD29BFDA541F0F9.gr7.us-east-1.eks.amazonaws.com
+    server: https://BACCD85D487853A80167CF12C3221C12.gr7.us-east-1.eks.amazonaws.com
     namespace: app-dev
     
   syncPolicy:
