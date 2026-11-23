@@ -14,8 +14,6 @@ spec:
       releaseName: istiod
       values: |
         profile: ""
-        global:
-          platform: eks
   destination:
     server: https://BACCD85D487853A80167CF12C3221C12.gr7.us-east-1.eks.amazonaws.com
     namespace: istio-system
