@@ -26,13 +26,7 @@ spec:
             memory: 512Mi
 
         service:
-          type: LoadBalancer
-          annotations:
-            service.beta.kubernetes.io/aws-load-balancer-type: "external"
-            service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
-            service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
-            service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "TCP"
-            service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "traffic-port"
+          type: ClusterIP
           ports:
             - name: http2
               port: 80
